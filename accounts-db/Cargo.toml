@@ -42,6 +42,7 @@ ahash = { workspace = true }
 blake3 = { workspace = true }
 bv = { workspace = true, features = ["serde"] }
 dashmap = { workspace = true, features = ["rayon", "raw-api"] }
+igris = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 modular-bitfield = { workspace = true }

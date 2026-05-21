@@ -741,6 +741,30 @@ pub fn execute(
     let starting_with_geyser_plugins: bool = on_start_geyser_plugin_config_files.is_some()
         || matches.is_present("geyser_plugin_always_enabled");
 
+    let qlaster_config = if matches.is_present("qlaster_enable") {
+        let bind_ip = value_t_or_exit!(matches, "qlaster_bind_ip", std::net::IpAddr);
+        let uds_path = PathBuf::from(value_t_or_exit!(matches, "qlaster_uds_path", String));
+        let account_channel_capacity =
+            value_t_or_exit!(matches, "qlaster_updates_channel_capacity", usize);
+        let enable_transactions = matches.is_present("qlaster_enable_transactions");
+        let txn_channel_capacity =
+            value_t_or_exit!(matches, "qlaster_transactions_channel_capacity", usize);
+        Some(solana_core::validator::QlasterValidatorConfig {
+            bind_ip,
+            uds_path,
+            account_channel_capacity,
+            enable_transactions,
+            txn_channel_capacity,
+        })
+    } else if matches.is_present("qlaster_enable_transactions") {
+        eprintln!(
+            "--qlaster-enable-transactions requires --qlaster-enable; refusing to start."
+        );
+        std::process::exit(1);
+    } else {
+        None
+    };
+
     let account_paths: Vec<PathBuf> =
         if let Ok(account_paths) = values_t!(matches, "account_paths", String) {
             account_paths
@@ -801,6 +825,7 @@ pub fn execute(
         rpc_config: run_args.json_rpc_config,
         on_start_geyser_plugin_config_files,
         geyser_plugin_always_enabled: matches.is_present("geyser_plugin_always_enabled"),
+        qlaster_config,
         rpc_addrs: value_t!(matches, "rpc_port", u16).ok().map(|rpc_port| {
             (
                 SocketAddr::new(rpc_bind_address, rpc_port),

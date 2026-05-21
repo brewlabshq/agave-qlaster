@@ -965,6 +965,12 @@ pub struct AccountsDb {
     /// GeyserPlugin accounts update notifier
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
 
+    /// Qlaster streamer (forwards account writes to colocated consumers via
+    /// shared memory). Set late by the validator via `set_igris`; empty when
+    /// qlaster is not enabled. Late-bound to keep `new_with_config`'s
+    /// signature stable across the bank-loading chain.
+    igris: std::sync::OnceLock<Arc<igris::Igris>>,
+
     pub(crate) active_stats: ActiveStats,
 
     /// debug feature to scan every append vec and verify refcounts are equal
@@ -1038,6 +1044,15 @@ impl AccountsDb {
     /// accounts - this dramatically lowers contention.
     #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
     const DEFAULT_READ_ONLY_CACHE_NUM_SHARDS: usize = 65536;
+
+    /// Install the qlaster streamer. Idempotent: subsequent calls are no-ops.
+    /// Called by the validator wiring once the qlaster runtime is initialised,
+    /// so `write_accounts_to_cache` can forward writes.
+    pub fn set_igris(&self, igris: Arc<igris::Igris>) {
+        if self.igris.set(igris).is_err() {
+            log::warn!("AccountsDb::set_igris called more than once; ignoring");
+        }
+    }
 
     pub fn new_with_config(
         paths: Vec<PathBuf>,
@@ -1117,6 +1132,7 @@ impl AccountsDb {
             account_indexes: accounts_db_config.account_indexes.unwrap_or_default(),
             shrink_ratio: accounts_db_config.shrink_ratio,
             accounts_update_notifier,
+            igris: std::sync::OnceLock::new(),
             read_only_accounts_cache: ReadOnlyAccountsCache::new(
                 read_cache_size.0,
                 read_cache_size.1,
@@ -5708,6 +5724,18 @@ impl AccountsDb {
 
                 let account_shared_data = account.take_account();
                 let account_data_len = account_shared_data.data().len();
+                if let Some(streamer) = self.igris.get() {
+                    if streamer.need_notify(pubkey, account_shared_data.owner()) {
+                        let write_version =
+                            self.write_version.fetch_add(1, Ordering::Relaxed);
+                        streamer.notify_account_update(igris::IgrisAccount {
+                            pubkey: *pubkey,
+                            account: account_shared_data.clone(),
+                            slot,
+                            write_version,
+                        });
+                    }
+                }
                 self.accounts_cache.store(slot, pubkey, account_shared_data);
                 store_account.set(index as u64, true);
                 stats.num_accounts_stored += 1;

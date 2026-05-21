@@ -347,6 +347,7 @@ pub fn load_and_process_ledger(
                 Arc::default(),
                 enable_rpc_transaction_history,
                 transaction_notifier,
+                None, // igris
                 write_blockstore.clone(),
                 arg_matches.is_present("enable_extended_tx_metadata_storage"),
                 None,

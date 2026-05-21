@@ -831,6 +831,50 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
             .help("Еnable Geyser interface even if no Geyser configs are specified."),
     )
     .arg(
+        Arg::with_name("qlaster_enable")
+            .long("qlaster-enable")
+            .takes_value(false)
+            .help("Enable the qlaster SHM streamer (forwards account updates to colocated consumers via /dev/shm)."),
+    )
+    .arg(
+        Arg::with_name("qlaster_bind_ip")
+            .long("qlaster-bind-ip")
+            .value_name("IP")
+            .takes_value(true)
+            .default_value("127.0.0.1")
+            .help("Bind IP recorded for qlaster slot bookkeeping (loopback for SHM-only)."),
+    )
+    .arg(
+        Arg::with_name("qlaster_uds_path")
+            .long("qlaster-uds-path")
+            .value_name("PATH")
+            .takes_value(true)
+            .default_value("/tmp/qlaster.sock")
+            .help("UDS control-socket path that qlaster SHM consumers connect to."),
+    )
+    .arg(
+        Arg::with_name("qlaster_updates_channel_capacity")
+            .long("qlaster-updates-channel-capacity")
+            .value_name("N")
+            .takes_value(true)
+            .default_value("65536")
+            .help("Capacity of the broadcast channel for qlaster account-update messages."),
+    )
+    .arg(
+        Arg::with_name("qlaster_enable_transactions")
+            .long("qlaster-enable-transactions")
+            .takes_value(false)
+            .help("Also stream committed transactions through qlaster. Requires --qlaster-enable."),
+    )
+    .arg(
+        Arg::with_name("qlaster_transactions_channel_capacity")
+            .long("qlaster-transactions-channel-capacity")
+            .value_name("N")
+            .takes_value(true)
+            .default_value("65536")
+            .help("Capacity of the broadcast channel for qlaster transaction-update messages."),
+    )
+    .arg(
         Arg::with_name("snapshot_archive_format")
             .long("snapshot-archive-format")
             .alias("snapshot-compression") // Legacy name used by Solana v1.5.x and older

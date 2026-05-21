@@ -67,6 +67,7 @@ dashmap = { workspace = true, features = ["rayon", "raw-api"] }
 futures = { workspace = true }
 histogram = { workspace = true }
 itertools = { workspace = true }
+igris = { workspace = true }
 lazy-lru = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }

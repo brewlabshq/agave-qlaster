@@ -27,6 +27,7 @@ base64 = { workspace = true }
 bs58 = { workspace = true }
 crossbeam-channel = { workspace = true }
 dashmap = { workspace = true }
+igris = { workspace = true }
 itertools = { workspace = true }
 jsonrpc-core = { workspace = true }
 jsonrpc-core-client = { workspace = true }

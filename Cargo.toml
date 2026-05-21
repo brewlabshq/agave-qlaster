@@ -39,6 +39,7 @@ members = [
     "geyser-plugin-manager",
     "gossip",
     "gossip-cli",
+    "igris",
     "install",
     "io-uring",
     "keygen",
@@ -254,6 +255,7 @@ histogram = "0.6.9"
 http = "1.4.0"
 humantime = "2.3.0"
 hyper-util = "0.1.20"
+igris = { path = "igris", version = "=4.2.0-alpha.0" }
 imbl = "7.0.0"
 indexmap = "2.14.0"
 indicatif = "0.18.4"
@@ -307,6 +309,7 @@ prost = "0.14.3"
 prost-types = "0.14.3"
 protobuf-src = "1.1.0"
 protosol = "=6.1.0"
+qlaster = { git = "ssh://git@github.com/brewlabshq/qlaster-public.git", branch = "main" }
 qualifier_attr = { version = "0.2.2", default-features = false }
 quinn = "0.11.9"
 rand = "0.9.4"

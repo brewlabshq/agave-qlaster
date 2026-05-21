@@ -62,6 +62,7 @@ impl TransactionStatusService {
         max_complete_transaction_status_slot: Arc<AtomicU64>,
         enable_rpc_transaction_history: bool,
         transaction_notifier: Option<TransactionNotifierArc>,
+        igris: Option<Arc<igris::Igris>>,
         blockstore: Arc<Blockstore>,
         enable_extended_tx_metadata_storage: bool,
         depenency_tracker: Option<Arc<DependencyTracker>>,
@@ -96,6 +97,7 @@ impl TransactionStatusService {
                             &max_complete_transaction_status_slot,
                             enable_rpc_transaction_history,
                             transaction_notifier.clone(),
+                            igris.clone(),
                             &blockstore,
                             enable_extended_tx_metadata_storage,
                             depenency_tracker.clone(),
@@ -124,6 +126,7 @@ impl TransactionStatusService {
         max_complete_transaction_status_slot: &Arc<AtomicU64>,
         enable_rpc_transaction_history: bool,
         transaction_notifier: Option<TransactionNotifierArc>,
+        igris: Option<Arc<igris::Igris>>,
         blockstore: &Blockstore,
         enable_extended_tx_metadata_storage: bool,
         dependency_tracker: Option<Arc<DependencyTracker>>,
@@ -221,7 +224,27 @@ impl TransactionStatusService {
                         );
                     }
 
-                    if !(enable_extended_tx_metadata_storage || transaction_notifier.is_some()) {
+                    if let Some(streamer) = igris.as_ref() {
+                        let is_vote = transaction.is_simple_vote_transaction();
+                        let signature = *transaction.signature();
+                        let versioned = transaction.to_versioned_transaction();
+                        let payload = igris::encode_transaction_payload(
+                            &versioned,
+                            &transaction_status_meta,
+                        );
+                        streamer.notify_transaction_update(igris::IgrisTransaction {
+                            slot,
+                            index: transaction_index as u32,
+                            signature,
+                            is_vote,
+                            payload,
+                        });
+                    }
+
+                    if !(enable_extended_tx_metadata_storage
+                        || transaction_notifier.is_some()
+                        || igris.is_some())
+                    {
                         transaction_status_meta.log_messages.take();
                         transaction_status_meta.inner_instructions.take();
                         transaction_status_meta.return_data.take();
@@ -536,6 +559,7 @@ pub(crate) mod tests {
             Arc::new(AtomicU64::default()),
             false,
             Some(test_notifier.clone()),
+            None, // igris
             blockstore,
             false,
             None, // No work dependency tracker
@@ -645,6 +669,7 @@ pub(crate) mod tests {
             Arc::new(AtomicU64::default()),
             true,
             Some(test_notifier.clone()),
+            None, // igris
             blockstore,
             false,
             Some(dependency_tracker.clone()),

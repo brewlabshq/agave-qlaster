@@ -152,7 +152,7 @@ use {
         borrow::Cow,
         cmp,
         collections::{HashMap, HashSet},
-        net::{SocketAddr, SocketAddrV4},
+        net::{IpAddr, SocketAddr, SocketAddrV4},
         num::{NonZeroU64, NonZeroUsize},
         path::{Path, PathBuf},
         str::FromStr,
@@ -316,6 +316,27 @@ pub struct ValidatorLogConfig {
     pub logrotate_flag: Arc<AtomicBool>,
 }
 
+#[derive(Clone, Debug)]
+pub struct QlasterValidatorConfig {
+    pub bind_ip: IpAddr,
+    pub uds_path: PathBuf,
+    pub account_channel_capacity: usize,
+    pub enable_transactions: bool,
+    pub txn_channel_capacity: usize,
+}
+
+impl From<QlasterValidatorConfig> for igris::QlasterConfig {
+    fn from(v: QlasterValidatorConfig) -> Self {
+        igris::QlasterConfig {
+            bind_ip: v.bind_ip,
+            uds_path: v.uds_path,
+            account_channel_capacity: v.account_channel_capacity,
+            enable_transactions: v.enable_transactions,
+            txn_channel_capacity: v.txn_channel_capacity,
+        }
+    }
+}
+
 pub struct ValidatorConfig {
     /// Log messages go to `stderr` if `None`
     pub log_config: Option<ValidatorLogConfig>,
@@ -329,6 +350,8 @@ pub struct ValidatorConfig {
     /// Specifies which plugins to start up with
     pub on_start_geyser_plugin_config_files: Option<Vec<PathBuf>>,
     pub geyser_plugin_always_enabled: bool,
+    /// When `Some`, brings up the qlaster SHM streamer.
+    pub qlaster_config: Option<QlasterValidatorConfig>,
     pub rpc_addrs: Option<(SocketAddr, SocketAddr)>, // (JsonRpc, JsonRpcPubSub)
     pub pubsub_config: PubSubConfig,
     pub snapshot_config: SnapshotConfig,
@@ -413,6 +436,7 @@ impl ValidatorConfig {
             rpc_config: JsonRpcConfig::default_for_test(),
             on_start_geyser_plugin_config_files: None,
             geyser_plugin_always_enabled: false,
+            qlaster_config: None,
             rpc_addrs: None,
             pubsub_config: PubSubConfig::default_for_tests(),
             snapshot_config: SnapshotConfig::new_load_only(),
@@ -902,6 +926,28 @@ impl Validator {
 
         let dependency_tracker = Arc::new(DependencyTracker::default());
 
+        // Bring up the qlaster streamer, if enabled. Held as `Option<Arc<Igris>>`
+        // so callers (AccountsDb, TransactionStatusService) get a uniform handle
+        // whether qlaster is on or off.
+        let igris = if let Some(qcfg) = config.qlaster_config.clone() {
+            let i = igris::Igris::new();
+            i.init_qlaster(qcfg.clone().into())
+                .map_err(|e| ValidatorError::Other(format!("[Qlaster] init failed: {e}")))?;
+            info!(
+                "qlaster: enabled (uds={:?}, transactions={})",
+                qcfg.uds_path, qcfg.enable_transactions,
+            );
+            let i_shutdown = i.clone();
+            config
+                .validator_exit
+                .write()
+                .unwrap()
+                .register_exit(Box::new(move || i_shutdown.shutdown()));
+            Some(i)
+        } else {
+            None
+        };
+
         let (
             bank_forks,
             blockstore,
@@ -927,6 +973,7 @@ impl Validator {
             &start_progress,
             accounts_update_notifier,
             transaction_notifier,
+            igris.clone(),
             entry_notifier,
             config
                 .rpc_addrs
@@ -934,6 +981,20 @@ impl Validator {
                 .then(|| dependency_tracker.clone()),
         )
         .map_err(ValidatorError::Other)?;
+
+        // Install the qlaster streamer on AccountsDb so account writes can
+        // be forwarded. Done after bank_forks is built since AccountsDb is
+        // constructed inside the loading chain.
+        if let Some(igris) = igris.as_ref() {
+            bank_forks
+                .read()
+                .unwrap()
+                .root_bank()
+                .rc
+                .accounts
+                .accounts_db
+                .set_igris(igris.clone());
+        }
 
         let migration_status = bank_forks.read().unwrap().migration_status();
 
@@ -2170,6 +2231,7 @@ fn load_blockstore(
     start_progress: &Arc<RwLock<ValidatorStartProgress>>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     transaction_notifier: Option<TransactionNotifierArc>,
+    igris: Option<Arc<igris::Igris>>,
     entry_notifier: Option<EntryNotifierArc>,
     dependency_tracker: Option<Arc<DependencyTracker>>,
 ) -> Result<
@@ -2234,7 +2296,8 @@ fn load_blockstore(
 
     let enable_rpc_transaction_history =
         config.rpc_addrs.is_some() && config.rpc_config.enable_rpc_transaction_history;
-    let is_plugin_transaction_history_required = transaction_notifier.as_ref().is_some();
+    let is_plugin_transaction_history_required =
+        transaction_notifier.as_ref().is_some() || igris.as_ref().is_some();
     let transaction_history_services =
         if enable_rpc_transaction_history || is_plugin_transaction_history_required {
             initialize_rpc_transaction_history_services(
@@ -2243,6 +2306,7 @@ fn load_blockstore(
                 enable_rpc_transaction_history,
                 config.rpc_config.enable_extended_tx_metadata_storage,
                 transaction_notifier,
+                igris,
                 dependency_tracker,
             )
         } else {
@@ -2679,6 +2743,7 @@ fn initialize_rpc_transaction_history_services(
     enable_rpc_transaction_history: bool,
     enable_extended_tx_metadata_storage: bool,
     transaction_notifier: Option<TransactionNotifierArc>,
+    igris: Option<Arc<igris::Igris>>,
     dependency_tracker: Option<Arc<DependencyTracker>>,
 ) -> TransactionHistoryServices {
     let max_complete_transaction_status_slot = Arc::new(AtomicU64::new(blockstore.max_root()));
@@ -2692,6 +2757,7 @@ fn initialize_rpc_transaction_history_services(
         max_complete_transaction_status_slot.clone(),
         enable_rpc_transaction_history,
         transaction_notifier,
+        igris,
         blockstore,
         enable_extended_tx_metadata_storage,
         dependency_tracker,

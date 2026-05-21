@@ -1,0 +1,34 @@
+[package]
+name = "igris"
+description = "Qlaster integration shim for Agave validator (account + transaction streaming)."
+version = { workspace = true }
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+anyhow = { workspace = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+qlaster = { workspace = true }
+solana-account = { workspace = true }
+solana-clock = { workspace = true }
+solana-metrics = { workspace = true }
+solana-pubkey = { workspace = true }
+solana-signature = { workspace = true }
+# Pubkey type used by qlaster's public API. qlaster-public depends on
+# solana-pubkey 3.0.0 from crates.io, while the workspace ships 4.x; the two
+# types are distinct from cargo's view. We pull v3 explicitly here under a
+# renamed alias purely as a conversion target at the qlaster API boundary.
+qlaster-pubkey = { package = "solana-pubkey", version = "3.0.0", default-features = false }
+solana-transaction = { workspace = true, features = ["serde"] }
+solana-transaction-status-client-types = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "macros", "time"] }
